@@ -1,0 +1,8 @@
+Find My Battery.app/
+bin/
+__pycache__/
+*.pyc
+battery_history.sqlite3
+battery_report.html
+logs/
+local.find-my-battery.plist
