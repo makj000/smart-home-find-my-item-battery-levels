@@ -19,8 +19,8 @@ implementation.
 2. Open Find My and select the Items tab.
 3. Read item names and battery information through macOS Accessibility APIs.
 4. Report all detected battery levels.
-5. Send a local macOS Notification Center notification when a battery is at or
-   below 20%, or Find My explicitly reports a low-battery status.
+5. Send an ntfy notification when a battery is at or below 20%, or Find My
+   explicitly reports a low-battery status.
 6. Repeat the low-battery notification during every daily check while the Item
    remains low. Do not suppress repeated alerts across days.
 7. Store one reading per item per day in SQLite.
@@ -33,9 +33,8 @@ implementation.
 - `find_my_exporter.swift` exports accessible Find My UI elements as JSON.
 - `check_batteries.py` parses the JSON, records history, sends notifications,
   and generates the report.
-- Notifications are posted locally through macOS Notification Center by
-  `check_batteries.py`. No email, SMS, push service, or remote alert channel is
-  used.
+- Notifications are published to the ntfy topic configured in ignored local
+  file `ntfy_url.txt`.
 - `battery_history.sqlite3` stores daily history.
 - `battery_report.html` is the generated trend report.
 - `install-launch-agent.sh` generates and installs the daily 6:00 PM schedule.

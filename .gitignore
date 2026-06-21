@@ -6,3 +6,4 @@ battery_history.sqlite3
 battery_report.html
 logs/
 local.find-my-battery.plist
+ntfy_url.txt

@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 
 import json
-import os
 import re
 import sqlite3
 import subprocess
 import sys
 import tempfile
+import urllib.request
 from datetime import datetime
 from html import escape
 from pathlib import Path
@@ -16,6 +16,7 @@ PROJECT_DIR = Path(__file__).resolve().parent
 APP_PATH = PROJECT_DIR / "Find My Battery.app"
 DATABASE_PATH = PROJECT_DIR / "battery_history.sqlite3"
 REPORT_PATH = PROJECT_DIR / "battery_report.html"
+NTFY_URL_PATH = PROJECT_DIR / "ntfy_url.txt"
 THRESHOLD = 20
 
 
@@ -293,6 +294,20 @@ th, td {{ border-bottom: 1px solid #ddd; padding: 10px; text-align: left; }}
     )
 
 
+def load_ntfy_url():
+    if not NTFY_URL_PATH.exists():
+        raise RuntimeError(
+            f"Missing ntfy topic URL. Create {NTFY_URL_PATH} with "
+            "a topic URL such as https://ntfy.sh/my-topic."
+        )
+    url = NTFY_URL_PATH.read_text(encoding="utf-8").strip()
+    if not url:
+        raise RuntimeError(f"{NTFY_URL_PATH} is empty")
+    if "://" not in url:
+        url = f"https://ntfy.sh/{url}"
+    return url.rstrip("/")
+
+
 def notify(low_items):
     summary = ", ".join(
         f"{item['name']}: "
@@ -301,31 +316,19 @@ def notify(low_items):
         else f"{item['name']}: low"
         for item in low_items
     )
-    subprocess.run(
-        [
-            "/usr/bin/swift",
-            "-suppress-warnings",
-            "-e",
-            (
-                "import Foundation; "
-                "let args = ProcessInfo.processInfo.arguments; "
-                "let notification = NSUserNotification(); "
-                "notification.title = args[2]; "
-                "notification.informativeText = args[1]; "
-                "NSUserNotificationCenter.default.deliver(notification); "
-                "RunLoop.current.run(until: Date().addingTimeInterval(1))"
-            ),
-            summary,
-            "Find My battery warning",
-        ],
-        env={
-            **os.environ,
-            "CLANG_MODULE_CACHE_PATH": str(
-                Path(tempfile.gettempdir()) / "find-my-swift-cache"
-            ),
+    request = urllib.request.Request(
+        load_ntfy_url(),
+        data=summary.encode("utf-8"),
+        headers={
+            "Title": "Find My battery warning",
+            "Priority": "high",
+            "Tags": "warning",
         },
-        check=True,
+        method="POST",
     )
+    with urllib.request.urlopen(request, timeout=15) as response:
+        if response.status >= 400:
+            raise RuntimeError(f"ntfy publish failed: HTTP {response.status}")
 
 
 def main():
