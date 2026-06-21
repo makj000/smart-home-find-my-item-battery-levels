@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import json
+import os
 import re
 import sqlite3
 import subprocess
@@ -302,17 +303,28 @@ def notify(low_items):
     )
     subprocess.run(
         [
-            "/usr/bin/osascript",
+            "/usr/bin/swift",
+            "-suppress-warnings",
             "-e",
-            "on run argv",
-            "-e",
-            "display notification item 1 of argv with title item 2 of argv",
-            "-e",
-            "end run",
+            (
+                "import Foundation; "
+                "let args = ProcessInfo.processInfo.arguments; "
+                "let notification = NSUserNotification(); "
+                "notification.title = args[2]; "
+                "notification.informativeText = args[1]; "
+                "NSUserNotificationCenter.default.deliver(notification); "
+                "RunLoop.current.run(until: Date().addingTimeInterval(1))"
+            ),
             summary,
             "Find My battery warning",
         ],
-        check=False,
+        env={
+            **os.environ,
+            "CLANG_MODULE_CACHE_PATH": str(
+                Path(tempfile.gettempdir()) / "find-my-swift-cache"
+            ),
+        },
+        check=True,
     )
 
 

@@ -82,10 +82,10 @@ class BatteryHistoryTest(unittest.TestCase):
             )
 
         args = run.call_args.args[0]
-        self.assertIn(
-            "display notification item 1 of argv with title item 2 of argv",
-            args,
-        )
+        self.assertIn("/usr/bin/swift", args)
+        self.assertIn("NSUserNotificationCenter.default.deliver", args[3])
+        self.assertTrue(run.call_args.kwargs["check"])
+        self.assertIn("CLANG_MODULE_CACHE_PATH", run.call_args.kwargs["env"])
         self.assertIn("Car Keys: 15%, Camera Bag: low", args)
         self.assertEqual("Find My battery warning", args[-1])
 
