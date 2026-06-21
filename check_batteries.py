@@ -300,12 +300,20 @@ def notify(low_items):
         else f"{item['name']}: low"
         for item in low_items
     )
-    script = (
-        'display notification '
-        f'{json.dumps(summary)} '
-        'with title "Find My battery warning"'
+    subprocess.run(
+        [
+            "/usr/bin/osascript",
+            "-e",
+            "on run argv",
+            "-e",
+            "display notification item 1 of argv with title item 2 of argv",
+            "-e",
+            "end run",
+            summary,
+            "Find My battery warning",
+        ],
+        check=False,
     )
-    subprocess.run(["/usr/bin/osascript", "-e", script], check=False)
 
 
 def main():

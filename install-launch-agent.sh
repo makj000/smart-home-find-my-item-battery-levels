@@ -3,8 +3,10 @@ set -euo pipefail
 
 PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
 LABEL="local.find-my-battery"
+LEGACY_LABEL="com.kma.find-my-battery"
 PLIST_NAME="$LABEL.plist"
 DESTINATION="$HOME/Library/LaunchAgents/$PLIST_NAME"
+LEGACY_DESTINATION="$HOME/Library/LaunchAgents/$LEGACY_LABEL.plist"
 DOMAIN="gui/$(id -u)"
 
 if [[ ! -d "$PROJECT_DIR/Find My Battery.app" ]]; then
@@ -31,6 +33,8 @@ with destination.open("wb") as file:
     plistlib.dump(configuration, file)
 PY
 
+launchctl bootout "$DOMAIN/$LEGACY_LABEL" 2>/dev/null || true
+rm -f "$LEGACY_DESTINATION"
 launchctl bootout "$DOMAIN/$LABEL" 2>/dev/null || true
 launchctl bootstrap "$DOMAIN" "$DESTINATION"
 

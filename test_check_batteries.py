@@ -64,6 +64,31 @@ class BatteryHistoryTest(unittest.TestCase):
                 self.assertIn("9%", contents)
                 self.assertEqual(1, contents.count("<svg"))
 
+    def test_notify_passes_summary_as_osascript_argument(self):
+        with patch.object(check_batteries.subprocess, "run") as run:
+            check_batteries.notify(
+                [
+                    {
+                        "name": "Car Keys",
+                        "battery_percent": 15,
+                        "battery_status": "Battery charge is 15 percent.",
+                    },
+                    {
+                        "name": "Camera Bag",
+                        "battery_percent": None,
+                        "battery_status": "Low Battery",
+                    },
+                ]
+            )
+
+        args = run.call_args.args[0]
+        self.assertIn(
+            "display notification item 1 of argv with title item 2 of argv",
+            args,
+        )
+        self.assertIn("Car Keys: 15%, Camera Bag: low", args)
+        self.assertEqual("Find My battery warning", args[-1])
+
 
 if __name__ == "__main__":
     unittest.main()
