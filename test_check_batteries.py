@@ -1,6 +1,7 @@
 import tempfile
 import unittest
 from datetime import datetime
+from io import StringIO
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -8,6 +9,46 @@ import check_batteries
 
 
 class BatteryHistoryTest(unittest.TestCase):
+    def test_export_find_my_ui_retries_missing_window(self):
+        with (
+            patch.object(check_batteries, "activate_find_my") as activate,
+            patch.object(
+                check_batteries,
+                "export_find_my_ui_once",
+                side_effect=[
+                    RuntimeError("Error: Find My has no accessible window."),
+                    [{"description": "Car Keys\nShared with Family Member"}],
+                ],
+            ),
+        ):
+            records = check_batteries.export_find_my_ui(
+                attempts=2,
+                wait_seconds=0,
+            )
+
+        self.assertEqual(
+            [{"description": "Car Keys\nShared with Family Member"}],
+            records,
+        )
+        self.assertEqual(2, activate.call_count)
+
+    def test_export_find_my_ui_does_not_retry_unrelated_errors(self):
+        with (
+            patch.object(check_batteries, "activate_find_my") as activate,
+            patch.object(
+                check_batteries,
+                "export_find_my_ui_once",
+                side_effect=RuntimeError("Accessibility permission is required."),
+            ),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "Accessibility"):
+                check_batteries.export_find_my_ui(
+                    attempts=3,
+                    wait_seconds=0,
+                )
+
+        self.assertEqual(1, activate.call_count)
+
     def test_parse_items(self):
         records = [
             {
@@ -63,6 +104,38 @@ class BatteryHistoryTest(unittest.TestCase):
                 self.assertIn("Keys", contents)
                 self.assertIn("9%", contents)
                 self.assertEqual(1, contents.count("<svg"))
+
+    def test_main_warns_when_alert_fails_after_recording(self):
+        with tempfile.TemporaryDirectory() as directory:
+            database = Path(directory) / "history.sqlite3"
+            report = Path(directory) / "report.html"
+            stderr = StringIO()
+            with (
+                patch.object(check_batteries, "DATABASE_PATH", database),
+                patch.object(check_batteries, "REPORT_PATH", report),
+                patch.object(
+                    check_batteries,
+                    "export_find_my_ui",
+                    return_value=[
+                        {
+                            "description": (
+                                "Car Keys\nShared with Family Member"
+                            )
+                        },
+                        {"description": "Battery charge is 15 percent."},
+                    ],
+                ),
+                patch.object(
+                    check_batteries,
+                    "notify",
+                    side_effect=RuntimeError("rate limited"),
+                ),
+                patch("sys.stderr", stderr),
+            ):
+                check_batteries.main()
+
+            self.assertTrue(report.exists())
+            self.assertIn("battery alert failed", stderr.getvalue())
 
     def test_notify_publishes_to_ntfy(self):
         response = MagicMock()

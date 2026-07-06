@@ -6,6 +6,7 @@ import sqlite3
 import subprocess
 import sys
 import tempfile
+import time
 import urllib.request
 from datetime import datetime
 from html import escape
@@ -14,13 +15,36 @@ from pathlib import Path
 
 PROJECT_DIR = Path(__file__).resolve().parent
 APP_PATH = PROJECT_DIR / "Find My Battery.app"
+FIND_MY_APP_PATH = Path("/System/Applications/FindMy.app")
 DATABASE_PATH = PROJECT_DIR / "battery_history.sqlite3"
 REPORT_PATH = PROJECT_DIR / "battery_report.html"
 NTFY_URL_PATH = PROJECT_DIR / "ntfy_url.txt"
 THRESHOLD = 20
+NO_WINDOW_ERROR = "Find My has no accessible window"
 
 
-def export_find_my_ui():
+def activate_find_my(wait_seconds=3.0):
+    subprocess.run(
+        ["/usr/bin/open", str(FIND_MY_APP_PATH)],
+        check=False,
+    )
+    time.sleep(wait_seconds)
+
+
+def export_find_my_ui(attempts=3, wait_seconds=3.0):
+    last_error = None
+    for attempt in range(attempts):
+        activate_find_my(wait_seconds)
+        try:
+            return export_find_my_ui_once()
+        except RuntimeError as error:
+            last_error = error
+            if NO_WINDOW_ERROR not in str(error) or attempt == attempts - 1:
+                raise
+    raise last_error
+
+
+def export_find_my_ui_once():
     with tempfile.TemporaryDirectory() as directory:
         stdout_path = Path(directory) / "find-my.json"
         stderr_path = Path(directory) / "find-my.err"
@@ -39,7 +63,10 @@ def export_find_my_ui():
         error = stderr_path.read_text(encoding="utf-8").strip()
         if completed.returncode or error:
             raise RuntimeError(error or "Find My exporter failed")
-        return json.loads(stdout_path.read_text(encoding="utf-8"))
+        output = stdout_path.read_text(encoding="utf-8").strip()
+        if not output:
+            raise RuntimeError("Find My exporter produced no JSON")
+        return json.loads(output)
 
 
 def parse_items(records):
@@ -358,7 +385,10 @@ def main():
             low_items.append(item)
 
     if low_items:
-        notify(low_items)
+        try:
+            notify(low_items)
+        except Exception as error:
+            print(f"Warning: battery alert failed: {error}", file=sys.stderr)
     else:
         print(f"No batteries are at or below {THRESHOLD}%.")
     print(f"Report: {REPORT_PATH}")

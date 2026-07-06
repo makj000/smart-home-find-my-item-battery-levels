@@ -25,7 +25,7 @@ label = sys.argv[3]
 configuration = {
     "Label": label,
     "ProgramArguments": [str(project_dir / "run.sh")],
-    "StartCalendarInterval": {"Hour": 18, "Minute": 0},
+    "StartCalendarInterval": {"Hour": 12, "Minute": 0},
     "StandardOutPath": str(project_dir / "logs" / "check.log"),
     "StandardErrorPath": str(project_dir / "logs" / "error.log"),
 }
@@ -38,6 +38,6 @@ rm -f "$LEGACY_DESTINATION"
 launchctl bootout "$DOMAIN/$LABEL" 2>/dev/null || true
 launchctl bootstrap "$DOMAIN" "$DESTINATION"
 
-echo "Installed daily check for 6:00 PM."
+echo "Installed daily check for 12:00 PM."
 echo "Run once now to grant Accessibility access:"
 echo "  open '$PROJECT_DIR/Find My Battery.app'"

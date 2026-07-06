@@ -15,7 +15,7 @@ implementation.
 
 ## Behavior
 
-1. Run once daily at 6:00 PM local time when the Mac is running.
+1. Run once daily at 12:00 PM local time when the Mac is running.
 2. Open Find My and select the Items tab.
 3. Read item names and battery information through macOS Accessibility APIs.
 4. Report all detected battery levels.
@@ -37,7 +37,7 @@ implementation.
   file `ntfy_url.txt`.
 - `battery_history.sqlite3` stores daily history.
 - `battery_report.html` is the generated trend report.
-- `install-launch-agent.sh` generates and installs the daily 6:00 PM schedule.
+- `install-launch-agent.sh` generates and installs the daily 12:00 PM schedule.
 
 ## Critical Constraint
 
