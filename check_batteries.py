@@ -87,6 +87,7 @@ def parse_items(records):
                         "name": current_item,
                         "battery_percent": None,
                         "battery_status": None,
+                        "last_seen_status": first_line,
                     }
                 )
                 continue
@@ -98,21 +99,42 @@ def parse_items(records):
     return items
 
 
+def ensure_schema(connection):
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS battery_readings (
+            item_name TEXT NOT NULL,
+            checked_at TEXT NOT NULL,
+            reading_date TEXT NOT NULL,
+            battery_percent INTEGER,
+            battery_status TEXT,
+            PRIMARY KEY (item_name, reading_date)
+        )
+        """
+    )
+    columns = {
+        row[1]
+        for row in connection.execute("PRAGMA table_info(battery_readings)")
+    }
+    if "last_seen_status" not in columns:
+        connection.execute(
+            "ALTER TABLE battery_readings ADD COLUMN last_seen_status TEXT"
+        )
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS battery_observations (
+            observed_at TEXT NOT NULL,
+            note TEXT NOT NULL,
+            PRIMARY KEY (observed_at, note)
+        )
+        """
+    )
+
+
 def record_history(items, checked_at=None):
     checked_at = checked_at or datetime.now().astimezone()
     with sqlite3.connect(DATABASE_PATH) as connection:
-        connection.execute(
-            """
-            CREATE TABLE IF NOT EXISTS battery_readings (
-                item_name TEXT NOT NULL,
-                checked_at TEXT NOT NULL,
-                reading_date TEXT NOT NULL,
-                battery_percent INTEGER,
-                battery_status TEXT,
-                PRIMARY KEY (item_name, reading_date)
-            )
-            """
-        )
+        ensure_schema(connection)
         for item in items:
             connection.execute(
                 """
@@ -121,12 +143,14 @@ def record_history(items, checked_at=None):
                     checked_at,
                     reading_date,
                     battery_percent,
-                    battery_status
-                ) VALUES (?, ?, ?, ?, ?)
+                    battery_status,
+                    last_seen_status
+                ) VALUES (?, ?, ?, ?, ?, ?)
                 ON CONFLICT(item_name, reading_date) DO UPDATE SET
                     checked_at = excluded.checked_at,
                     battery_percent = excluded.battery_percent,
-                    battery_status = excluded.battery_status
+                    battery_status = excluded.battery_status,
+                    last_seen_status = excluded.last_seen_status
                 """,
                 (
                     item["name"],
@@ -134,17 +158,49 @@ def record_history(items, checked_at=None):
                     checked_at.date().isoformat(),
                     item["battery_percent"],
                     item["battery_status"],
+                    item.get("last_seen_status"),
                 ),
             )
 
 
+def record_observation(note, observed_at=None):
+    observed_at = observed_at or datetime.now().astimezone()
+    with sqlite3.connect(DATABASE_PATH) as connection:
+        ensure_schema(connection)
+        connection.execute(
+            """
+            INSERT OR IGNORE INTO battery_observations (observed_at, note)
+            VALUES (?, ?)
+            """,
+            (observed_at.isoformat(timespec="seconds"), note),
+        )
+
+
 def load_history():
     with sqlite3.connect(DATABASE_PATH) as connection:
+        ensure_schema(connection)
         return connection.execute(
             """
-            SELECT item_name, reading_date, battery_percent, battery_status
+            SELECT
+                item_name,
+                reading_date,
+                battery_percent,
+                battery_status,
+                last_seen_status
             FROM battery_readings
             ORDER BY item_name, reading_date
+            """
+        ).fetchall()
+
+
+def load_observations():
+    with sqlite3.connect(DATABASE_PATH) as connection:
+        ensure_schema(connection)
+        return connection.execute(
+            """
+            SELECT observed_at, note
+            FROM battery_observations
+            ORDER BY observed_at DESC, note
             """
         ).fetchall()
 
@@ -153,7 +209,7 @@ def combined_chart_svg(grouped):
     series = {
         name: [
             (date, percent)
-            for _, date, percent, _ in readings
+            for _, date, percent, _, _ in readings
             if percent is not None
         ]
         for name, readings in grouped.items()
@@ -255,6 +311,7 @@ def generate_report():
             if latest[2] is not None
             else latest[3] or "not reported"
         )
+        last_seen = latest[4] or "not reported"
         status_class = (
             "low"
             if latest[2] is not None and latest[2] <= THRESHOLD
@@ -265,9 +322,19 @@ def generate_report():
             <tr>
               <td>{escape(item_name)}</td>
               <td class="{status_class}">{escape(level)}</td>
+              <td>{escape(last_seen)}</td>
             </tr>
             """
         )
+    observation_rows = [
+        f"""
+        <tr>
+          <td>{escape(observed_at)}</td>
+          <td>{escape(note)}</td>
+        </tr>
+        """
+        for observed_at, note in load_observations()
+    ]
 
     generated = datetime.now().astimezone().strftime("%Y-%m-%d %I:%M %p %Z")
     REPORT_PATH.write_text(
@@ -310,8 +377,17 @@ th, td {{ border-bottom: 1px solid #ddd; padding: 10px; text-align: left; }}
 <section>
   <h2>Latest Readings</h2>
   <table>
-    <thead><tr><th>Item</th><th>Battery</th></tr></thead>
+    <thead>
+      <tr><th>Item</th><th>Battery</th><th>Find My item text</th></tr>
+    </thead>
     <tbody>{''.join(latest_rows)}</tbody>
+  </table>
+</section>
+<section>
+  <h2>Observations</h2>
+  <table>
+    <thead><tr><th>Observed At</th><th>Note</th></tr></thead>
+    <tbody>{''.join(observation_rows)}</tbody>
   </table>
 </section>
 </body>

@@ -70,11 +70,13 @@ class BatteryHistoryTest(unittest.TestCase):
                     "name": "Car Keys",
                     "battery_percent": 15,
                     "battery_status": "Battery charge is 15 percent.",
+                    "last_seen_status": "Car Keys, Home, 2 days ago",
                 },
                 {
                     "name": "Camera Bag",
                     "battery_percent": None,
                     "battery_status": None,
+                    "last_seen_status": "Camera Bag, No location found",
                 },
             ],
             check_batteries.parse_items(records),
@@ -94,16 +96,42 @@ class BatteryHistoryTest(unittest.TestCase):
                             "name": "Keys",
                             "battery_percent": 9,
                             "battery_status": "Battery charge is 9 percent.",
+                            "last_seen_status": "Keys, Home, 3 days ago",
                         }
                     ],
                     datetime.fromisoformat("2026-06-13T18:00:00-07:00"),
+                )
+                check_batteries.record_observation(
+                    "Keys and Wallet became low around the same time.",
+                    datetime.fromisoformat("2026-06-13T19:00:00-07:00"),
                 )
                 check_batteries.generate_report()
                 contents = report.read_text()
                 self.assertIn("Daily Battery Trends", contents)
                 self.assertIn("Keys", contents)
                 self.assertIn("9%", contents)
+                self.assertIn("Keys, Home, 3 days ago", contents)
+                self.assertIn("Keys and Wallet became low", contents)
                 self.assertEqual(1, contents.count("<svg"))
+
+    def test_history_migrates_last_seen_column(self):
+        with tempfile.TemporaryDirectory() as directory:
+            database = Path(directory) / "history.sqlite3"
+            with patch.object(check_batteries, "DATABASE_PATH", database):
+                check_batteries.record_history(
+                    [
+                        {
+                            "name": "Keys",
+                            "battery_percent": None,
+                            "battery_status": None,
+                            "last_seen_status": "Keys, Home, now",
+                        }
+                    ],
+                    datetime.fromisoformat("2026-06-13T18:00:00-07:00"),
+                )
+                rows = check_batteries.load_history()
+
+        self.assertEqual("Keys, Home, now", rows[0][4])
 
     def test_main_warns_when_alert_fails_after_recording(self):
         with tempfile.TemporaryDirectory() as directory:
