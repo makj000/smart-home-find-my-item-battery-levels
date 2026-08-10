@@ -7,3 +7,4 @@ battery_report.html
 logs/
 local.find-my-battery.plist
 ntfy_url.txt
+.env

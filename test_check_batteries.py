@@ -112,6 +112,8 @@ class BatteryHistoryTest(unittest.TestCase):
                 self.assertIn("9%", contents)
                 self.assertIn("Keys, Home, 3 days ago", contents)
                 self.assertIn("Keys and Wallet became low", contents)
+                self.assertIn('data-item="keys"', contents)
+                self.assertIn("setHighlight", contents)
                 self.assertEqual(1, contents.count("<svg"))
 
     def test_history_migrates_last_seen_column(self):

@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 
 import json
+import os
 import re
 import sqlite3
 import subprocess
 import sys
 import tempfile
 import time
+import urllib.parse
 import urllib.request
 from datetime import datetime
 from html import escape
@@ -205,6 +207,11 @@ def load_observations():
         ).fetchall()
 
 
+def item_dom_id(item_name):
+    normalized = re.sub(r"[^a-z0-9]+", "-", item_name.lower()).strip("-")
+    return normalized or "item"
+
+
 def combined_chart_svg(grouped):
     series = {
         name: [
@@ -259,10 +266,7 @@ def combined_chart_svg(grouped):
     legend = []
     for index, (name, readings) in enumerate(sorted(series.items())):
         color = colors[index % len(colors)]
-        points = " ".join(
-            f"{x(date):.1f},{y(percent):.1f}"
-            for date, percent in readings
-        )
+        item_id = item_dom_id(name)
         circles = "".join(
             f'<circle cx="{x(date):.1f}" cy="{y(percent):.1f}" r="4" '
             f'style="fill:{color}">'
@@ -271,11 +275,12 @@ def combined_chart_svg(grouped):
             for date, percent in readings
         )
         lines.append(
-            f'<polyline points="{points}" style="stroke:{color}" />'
-            f"{circles}"
+            f'<g class="series" data-item="{escape(item_id)}">'
+            f"{circles}</g>"
         )
         legend.append(
-            f'<span><i style="background:{color}"></i>{escape(name)}</span>'
+            f'<span class="item-hover" data-item="{escape(item_id)}">'
+            f'<i style="background:{color}"></i>{escape(name)}</span>'
         )
 
     date_labels = []
@@ -319,7 +324,7 @@ def generate_report():
         )
         latest_rows.append(
             f"""
-            <tr>
+            <tr class="item-hover" data-item="{escape(item_dom_id(item_name))}">
               <td>{escape(item_name)}</td>
               <td class="{status_class}">{escape(level)}</td>
               <td>{escape(last_seen)}</td>
@@ -357,12 +362,18 @@ svg {{ width: 100%; height: auto; }}
 .grid line {{ stroke: #e5e5e5; }}
 .grid text, .date {{ fill: #666; font-size: 12px; }}
 .threshold {{ stroke: #c00; stroke-dasharray: 5 5; }}
-polyline {{ fill: none; stroke-width: 3; }}
+.series circle {{ transition: opacity 120ms, r 120ms; }}
+.series {{ transition: opacity 120ms; }}
+body.has-highlight .series {{ opacity: 0.14; }}
+body.has-highlight .series.highlight {{ opacity: 1; }}
+body.has-highlight .series.highlight circle {{ r: 6; }}
 .legend {{ display: flex; flex-wrap: wrap; gap: 14px; margin: 12px 0; }}
-.legend span {{ display: inline-flex; align-items: center; gap: 6px; }}
+.legend span {{ cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }}
 .legend i {{ width: 12px; height: 12px; border-radius: 50%; }}
 table {{ border-collapse: collapse; width: 100%; }}
 th, td {{ border-bottom: 1px solid #ddd; padding: 10px; text-align: left; }}
+tr.item-hover {{ cursor: pointer; }}
+tr.item-hover.highlight {{ background: #fff4cc; }}
 </style>
 </head>
 <body>
@@ -390,6 +401,27 @@ th, td {{ border-bottom: 1px solid #ddd; padding: 10px; text-align: left; }}
     <tbody>{''.join(observation_rows)}</tbody>
   </table>
 </section>
+<script>
+const body = document.body;
+const highlighted = () => document.querySelectorAll(".highlight");
+function setHighlight(item) {{
+  body.classList.add("has-highlight");
+  highlighted().forEach((element) => element.classList.remove("highlight"));
+  document.querySelectorAll(`[data-item="${{item}}"]`).forEach((element) => {{
+    element.classList.add("highlight");
+  }});
+}}
+function clearHighlight() {{
+  body.classList.remove("has-highlight");
+  highlighted().forEach((element) => element.classList.remove("highlight"));
+}}
+document.querySelectorAll(".item-hover").forEach((element) => {{
+  element.addEventListener("mouseenter", () => {{
+    setHighlight(element.dataset.item);
+  }});
+  element.addEventListener("mouseleave", clearHighlight);
+}});
+</script>
 </body>
 </html>
 """,
@@ -409,6 +441,32 @@ def load_ntfy_url():
     if "://" not in url:
         url = f"https://ntfy.sh/{url}"
     return url.rstrip("/")
+
+
+def load_env(path):
+    if not path.exists():
+        return
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        os.environ.setdefault(key.strip(), value.strip().strip("\"'"))
+
+
+def send_telegram(text):
+    token = os.environ.get("BOAT_BATTERY_TELEGRAM_BOT_TOKEN", "").strip()
+    chat_id = os.environ.get("BOAT_BATTERY_TELEGRAM_CHAT_ID", "").strip()
+    if not token or not chat_id:
+        return
+    request = urllib.request.Request(
+        f"https://api.telegram.org/bot{token}/sendMessage",
+        data=urllib.parse.urlencode({"chat_id": chat_id, "text": text}).encode("utf-8"),
+        method="POST",
+    )
+    with urllib.request.urlopen(request, timeout=15) as response:
+        if response.status >= 400:
+            raise RuntimeError(f"Telegram publish failed: HTTP {response.status}")
 
 
 def notify(low_items):
@@ -432,9 +490,11 @@ def notify(low_items):
     with urllib.request.urlopen(request, timeout=15) as response:
         if response.status >= 400:
             raise RuntimeError(f"ntfy publish failed: HTTP {response.status}")
+    send_telegram(f"Find My battery warning\n{summary}")
 
 
 def main():
+    load_env(PROJECT_DIR / ".env")
     items = parse_items(export_find_my_ui())
     if not items:
         raise RuntimeError("No Find My Items were found")
