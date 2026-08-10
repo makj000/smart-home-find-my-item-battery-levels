@@ -27,7 +27,7 @@ NO_WINDOW_ERROR = "Find My has no accessible window"
 
 def activate_find_my(wait_seconds=3.0):
     subprocess.run(
-        ["/usr/bin/open", str(FIND_MY_APP_PATH)],
+        ["/usr/bin/open", "-g", str(FIND_MY_APP_PATH)],
         check=False,
     )
     time.sleep(wait_seconds)
