@@ -143,6 +143,7 @@ class BatteryHistoryTest(unittest.TestCase):
             with (
                 patch.object(check_batteries, "DATABASE_PATH", database),
                 patch.object(check_batteries, "REPORT_PATH", report),
+                patch.object(check_batteries, "load_env"),
                 patch.object(
                     check_batteries,
                     "export_find_my_ui",
@@ -166,6 +167,29 @@ class BatteryHistoryTest(unittest.TestCase):
 
             self.assertTrue(report.exists())
             self.assertIn("battery alert failed", stderr.getvalue())
+
+    def test_main_skips_alert_for_exempt_item(self):
+        with tempfile.TemporaryDirectory() as directory:
+            database = Path(directory) / "history.sqlite3"
+            report = Path(directory) / "report.html"
+            with (
+                patch.object(check_batteries, "DATABASE_PATH", database),
+                patch.object(check_batteries, "REPORT_PATH", report),
+                patch.object(check_batteries, "load_env"),
+                patch.object(check_batteries, "ALERT_EXEMPT_ITEMS", {"B2"}),
+                patch.object(
+                    check_batteries,
+                    "export_find_my_ui",
+                    return_value=[
+                        {"description": "B2\nShared with Family Member"},
+                        {"description": "Battery charge is 5 percent."},
+                    ],
+                ),
+                patch.object(check_batteries, "notify") as notify,
+            ):
+                check_batteries.main()
+
+            notify.assert_not_called()
 
     def test_notify_publishes_to_ntfy(self):
         response = MagicMock()

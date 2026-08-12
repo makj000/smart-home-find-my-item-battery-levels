@@ -23,6 +23,9 @@ REPORT_PATH = PROJECT_DIR / "battery_report.html"
 NTFY_URL_PATH = PROJECT_DIR / "ntfy_url.txt"
 THRESHOLD = 20
 NO_WINDOW_ERROR = "Find My has no accessible window"
+# Items that are fine sitting at low battery most of the time (e.g. only
+# used while traveling), so they're tracked/reported but never alerted on.
+ALERT_EXEMPT_ITEMS = {"B2", "W4 - Prius key - Echo行李 （落在北京了）"}
 
 
 def activate_find_my(wait_seconds=3.0):
@@ -510,6 +513,8 @@ def main():
             else item["battery_status"] or "not reported"
         )
         print(f"{item['name']}: {level}")
+        if item["name"] in ALERT_EXEMPT_ITEMS:
+            continue
         if (
             item["battery_percent"] is not None
             and item["battery_percent"] <= THRESHOLD
